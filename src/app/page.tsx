@@ -3,17 +3,42 @@
 import { useState, useEffect, useRef } from "react";
 
 type Message = { role: "user" | "model"; parts: { text: string }[] };
-type SynapseState = { response: string; visual_query: string; is_final_guess: boolean };
+type AkinaiState = { response: string; is_final_guess: boolean };
 
 export default function App() {
   const [history, setHistory] = useState<Message[]>([]);
-  const [synapseState, setSynapseState] = useState<SynapseState | null>(null);
+  const [akinaiState, setAkinaiState] = useState<AkinaiState | null>(null);
   const [loading, setLoading] = useState(false);
   const [started, setStarted] = useState(false);
   const [input, setInput] = useState("");
+  const [isListening, setIsListening] = useState(false);
   const endRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => endRef.current?.scrollIntoView({ behavior: "smooth" }), [history, synapseState]);
+  useEffect(() => endRef.current?.scrollIntoView({ behavior: "smooth" }), [history, akinaiState]);
+
+  const toggleVoice = () => {
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      alert("Voice recognition is not supported in this browser. Please use Chrome.");
+      return;
+    }
+    const recognition = new SpeechRecognition();
+    recognition.continuous = false;
+    recognition.interimResults = false;
+    recognition.lang = "en-US";
+
+    recognition.onstart = () => setIsListening(true);
+    recognition.onresult = (event: any) => {
+      const transcript = event.results[0][0].transcript;
+      setInput(transcript);
+      sendResponse(transcript);
+    };
+    recognition.onerror = () => setIsListening(false);
+    recognition.onend = () => setIsListening(false);
+
+    if (isListening) recognition.stop();
+    else recognition.start();
+  };
 
   const sendResponse = async (text: string, isFirst = false) => {
     if (!text.trim() && !isFirst) return;
@@ -23,18 +48,18 @@ export default function App() {
     setInput("");
 
     try {
-      const res = await fetch("/api/synapse", {
+      const res = await fetch("/api/akinai", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ history, message: text, isFirst })
+        body: JSON.stringify({ history, message: text })
       });
       const data = await res.json();
       if (data.error) throw new Error(data.error);
 
       let raw = data.result || "{}";
       raw = raw.replace(/```json/g, "").replace(/```/g, "").trim();
-      const st = JSON.parse(raw) as SynapseState;
-      setSynapseState(st);
+      const st = JSON.parse(raw) as AkinaiState;
+      setAkinaiState(st);
 
       if (!isFirst) {
         setHistory(prev => [...prev, { role: "user", parts: [{ text }] }, { role: "model", parts: [{ text: JSON.stringify(st) }] }]);
@@ -42,7 +67,7 @@ export default function App() {
         setHistory([{ role: "model", parts: [{ text: JSON.stringify(st) }] }]);
       }
     } catch (e: any) {
-      alert("Synapse Connection Failed: " + e.message);
+      alert("Akinai Connection Failed: " + e.message);
     } finally {
       setLoading(false);
     }
@@ -50,75 +75,91 @@ export default function App() {
 
   const handleStart = () => {
     setStarted(true);
-    sendResponse("", true);
+    sendResponse("I am thinking of a character. I am ready.", true);
   };
 
-  const bgUrl = synapseState?.visual_query 
-    ? `https://image.pollinations.ai/prompt/${encodeURIComponent(synapseState.visual_query)}?width=1920&height=1080&nologo=true`
-    : "";
+  const charUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent("A cinematic highly detailed dark fantasy mage oracle in glowing red robes acting as a game character. full body standing, deep red aura, concept art")}?width=512&height=768&seed=42&nologo=true`;
 
   return (
-    <main className="w-full h-screen overflow-hidden flex flex-col justify-center items-center relative transition-all duration-[3000ms]"
-          style={{ backgroundImage: bgUrl ? `url('${bgUrl}')` : 'none', backgroundSize: 'cover', backgroundPosition: 'center', backgroundColor: '#0a0a0a' }}>
-      
-      <div className="absolute top-0 left-0 w-full h-full bg-black/60 backdrop-blur-sm z-0" />
+    <main className="w-full h-screen overflow-hidden flex flex-col justify-center items-center relative bg-[#0a0000] font-sans">
+      <div className="absolute top-0 left-0 w-full h-full bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-red-900/10 via-[#0a0000] to-[#050000] z-0" />
       
       {!started ? (
-        <div className="z-10 flex flex-col items-center gap-8 animate-fade-in text-center p-8 max-w-2xl bg-white/5 border border-white/10 rounded-2xl backdrop-blur-md shadow-2xl">
-          <h1 className="text-5xl font-black text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-purple-600 tracking-tight">SYNAPSE</h1>
-          <p className="text-gray-300 text-lg leading-relaxed">
-            I am not bound by lists or names. I can see what you are imagining.<br/>
-            Think of an object, a feeling, a historical event, or a specific dream.
+        <div className="z-10 flex flex-col items-center gap-8 animate-fade-in text-center p-8 max-w-2xl bg-red-950/10 border border-red-900/30 rounded-2xl shadow-[0_0_50px_rgba(220,38,38,0.1)] backdrop-blur-md">
+          <h1 className="text-7xl font-black text-transparent bg-clip-text bg-gradient-to-b from-red-500 to-red-900 tracking-[0.2em] drop-shadow-[0_0_20px_rgba(220,38,38,0.8)]">AKINAI</h1>
+          <p className="text-red-200/60 text-lg leading-relaxed font-light">
+            I am Akinai. A neural entity forged in blood-red code.<br/><br/>
+            Think of any character. Speak to me naturally. I will weave a story around you, read your emotions, and draw the truth from your mind.
           </p>
-          <button onClick={handleStart} className="px-8 py-3 bg-cyan-600 hover:bg-cyan-500 text-white rounded-full font-bold uppercase tracking-wider shadow-[0_0_20px_rgba(34,211,238,0.5)] transition-all">
-            Initiate Connection
+          <button onClick={handleStart} className="px-10 py-4 mt-4 bg-red-900/80 hover:bg-red-700 text-white rounded-md font-bold uppercase tracking-[0.3em] shadow-[0_0_30px_rgba(153,27,27,0.4)] transition-all hover:scale-105 border border-red-500/30">
+            Awaken Akinai
           </button>
         </div>
       ) : (
-        <div className="z-10 w-full max-w-4xl h-full flex flex-col p-4 sm:p-8">
-          <div className="flex-1 overflow-y-auto pb-32 pt-8 flex flex-col gap-6">
-             {synapseState ? (
-                <div className="animate-fade-in p-6 bg-black/60 border border-white/10 rounded-xl backdrop-blur-md shadow-2xl">
-                  {synapseState.is_final_guess && <div className="text-sm font-bold text-green-400 uppercase tracking-widest mb-2">FINAL SYNAPSE READ</div>}
-                  <p className="text-xl sm:text-3xl font-medium text-white leading-relaxed text-center">{synapseState.response}</p>
-                </div>
-             ) : (
-                <div className="flex justify-center items-center h-full">
-                  <div className="text-cyan-400 animate-pulse tracking-widest text-sm uppercase font-mono">Calibrating to your neural frequency...</div>
-                </div>
-             )}
-             {loading && synapseState && (
-                <div className="text-purple-400 animate-pulse tracking-widest text-sm uppercase font-mono text-center mt-4">Scanning possibilities...</div>
-             )}
-             <div ref={endRef} />
+        <div className="z-10 w-full max-w-6xl h-full flex flex-row items-end justify-between p-4 sm:p-8 relative">
+          
+          {/* Character Image Left */}
+          <div className="hidden md:flex w-1/3 h-full flex-col justify-end items-center pb-8 animate-fade-in pl-4 relative">
+            <img src={charUrl} alt="Akinai Oracle" className="w-full max-h-[85vh] object-contain drop-shadow-[0_0_50px_rgba(220,38,38,0.6)] opacity-95" />
+            <div className="absolute bottom-[20%] left-1/2 -translate-x-1/2 w-full text-center">
+              <h2 className="text-red-500 font-bold tracking-[0.5em] text-3xl uppercase opacity-80 animate-pulse text-shadow-xl shadow-black">Akinai</h2>
+            </div>
           </div>
 
-          {synapseState && !loading && !synapseState.is_final_guess && (
-             <div className="fixed bottom-0 left-0 w-full p-4 sm:p-8 bg-gradient-to-t from-black/90 via-black/50 to-transparent flex justify-center">
-                <div className="w-full max-w-4xl bg-black/40 backdrop-blur-md border border-white/10 p-2 rounded-full flex items-center shadow-2xl">
-                  <input 
-                    type="text" 
-                    value={input}
-                    onChange={e => setInput(e.target.value)}
-                    onKeyDown={e => e.key === "Enter" && sendResponse(input)}
-                    placeholder="Provide your answer or elaboration..."
-                    className="flex-1 bg-transparent border-none text-white px-6 py-3 outline-none placeholder-gray-500 text-xl"
-                    autoFocus
-                  />
-                  <button onClick={() => sendResponse(input)} className="bg-cyan-600 hover:bg-cyan-500 px-8 py-3 rounded-full text-white font-bold transition-all border border-cyan-400/50">
-                    TRANSMIT
-                  </button>
-                </div>
-             </div>
-          )}
+          {/* Dialog UI Right */}
+          <div className="flex-1 w-full md:w-2/3 h-full flex flex-col pt-16 pb-8 pl-0 md:pl-16 relative">
+            <div className="flex-1 overflow-y-auto pb-40 flex flex-col gap-6 scrollbar-hide pr-4">
+               {akinaiState ? (
+                  <div className="animate-fade-in p-8 bg-[#0a0000]/90 border-t-2 border-l-2 border-red-800/80 rounded-tr-3xl rounded-bl-3xl shadow-[0_20px_50px_rgba(153,27,27,0.4)] backdrop-blur-xl relative">
+                    <div className="absolute -top-3 left-8 bg-[#0a0000] px-4 text-red-500 text-sm tracking-widest font-bold">AKINAI SPEAKS</div>
+                    {akinaiState.is_final_guess && <div className="text-sm font-bold text-red-400 uppercase tracking-widest mb-4 animate-pulse">*** FINAL ORACLE READ ***</div>}
+                    <p className="text-xl sm:text-2xl font-light text-red-50/90 leading-loose italic">"{akinaiState.response}"</p>
+                  </div>
+               ) : (
+                  <div className="flex justify-start items-center h-full pl-8">
+                    <div className="text-red-800 animate-pulse tracking-widest text-sm uppercase font-mono">Akinai is searching your thoughts...</div>
+                  </div>
+               )}
+               {loading && akinaiState && (
+                  <div className="text-red-900 animate-pulse tracking-widest text-sm uppercase font-mono pl-8">Reading emotional resonance...</div>
+               )}
+               <div ref={endRef} />
+            </div>
 
-          {synapseState?.is_final_guess && (
-             <div className="fixed bottom-8 left-1/2 -translate-x-1/2">
-                <button onClick={() => window.location.reload()} className="bg-white text-black px-8 py-3 rounded-full font-bold hover:bg-gray-200 shadow-xl transition-all uppercase tracking-widest">
-                  Think of Something Else
-                </button>
-             </div>
-          )}
+            {akinaiState && !loading && !akinaiState.is_final_guess && (
+               <div className="absolute bottom-8 right-8 w-full md:w-[calc(100%-4rem)] max-w-3xl">
+                  <div className="w-full bg-[#0a0000]/90 backdrop-blur-xl border border-red-900/50 p-2 rounded-xl flex items-center shadow-[0_0_30px_rgba(153,27,27,0.3)]">
+                    
+                    <button onClick={toggleVoice} className={`p-4 rounded-lg transition-all ${isListening ? 'bg-red-700 animate-pulse shadow-[0_0_20px_rgba(220,38,38,0.8)]' : 'bg-[#1a0505] hover:bg-red-900/50 border border-red-900/50 text-red-400'}`}>
+                      {isListening ? '🎙️ LSTN' : '🎤 VOIC'}
+                    </button>
+
+                    <input 
+                      type="text" 
+                      value={input}
+                      onChange={e => setInput(e.target.value)}
+                      onKeyDown={e => e.key === "Enter" && sendResponse(input)}
+                      placeholder={isListening ? "Listening to your voice..." : "Speak to Akinai..."}
+                      className="flex-1 bg-transparent border-none text-red-100 px-6 py-3 outline-none placeholder-red-900/60 text-lg font-light italic"
+                      autoFocus
+                    />
+                    
+                    <button onClick={() => sendResponse(input)} className="bg-[#1a0505] hover:bg-red-800 text-red-300 px-8 py-4 rounded-lg font-bold transition-all uppercase tracking-widest text-sm border-l border-red-900/50">
+                      Reply
+                    </button>
+                  </div>
+               </div>
+            )}
+
+            {akinaiState?.is_final_guess && (
+               <div className="absolute bottom-12 right-1/2 translate-x-1/2 md:translate-x-0 md:right-8">
+                  <button onClick={() => window.location.reload()} className="bg-[#1a0505] text-red-200 border border-red-800/80 px-10 py-4 rounded-xl font-bold hover:bg-red-900 shadow-[0_0_40px_rgba(220,38,38,0.3)] transition-all uppercase tracking-[0.2em]">
+                    Restart Link
+                  </button>
+               </div>
+            )}
+          </div>
+
         </div>
       )}
     </main>
